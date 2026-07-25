@@ -25,7 +25,8 @@ than something to put other people's accounts on:
 - There is no blob garbage collection yet (`blob_refs` exists but is unswept).
 - Without `GLEAM_PDS_ROTATION_KEY` set, PLC operations fall back to reusing
   the account signing key as the rotation key. Set it (see below).
-- Test coverage is thin (crypto and repo units only).
+- Test coverage is thin: crypto and repo units only, no HTTP or federation
+  tests.
 
 ## What works
 
