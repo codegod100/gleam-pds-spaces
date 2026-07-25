@@ -1,0 +1,35 @@
+# Example systemd unit for running gleam-pds outside a container.
+#
+# Copy this to gleam-pds.service, adjust the user and paths, then install it:
+#   sudo cp gleam-pds.service /etc/systemd/system/
+#   sudo systemctl enable --now gleam-pds
+#
+# The real gleam-pds.service is gitignored so your paths stay out of the repo.
+
+[Unit]
+Description=Gleam AT Protocol PDS
+After=network.target
+
+[Service]
+Type=simple
+User=gleam-pds
+WorkingDirectory=/srv/gleam-pds
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=GLEAM_PDS_HOSTNAME=pds.example.com
+Environment=GLEAM_PDS_PORT=8000
+Environment=GLEAM_PDS_PUBLIC_URL=https://pds.example.com
+Environment=GLEAM_PDS_DB_PATH=/var/lib/gleam-pds/gleam_pds.db
+# GLEAM_PDS_SECRET and GLEAM_PDS_ROTATION_KEY must NOT be written here in
+# plaintext. Supply them out of band, for example via an operator-managed
+# EnvironmentFile with 0600 permissions:
+#   /etc/gleam-pds/secret.env contains GLEAM_PDS_SECRET=<random>
+# or as a systemd credential:
+#   LoadCredential=gleam_pds_secret:/etc/gleam-pds/secret
+# The server refuses to start if GLEAM_PDS_SECRET is missing or weak.
+EnvironmentFile=-/etc/gleam-pds/secret.env
+ExecStart=/usr/local/bin/gleam run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

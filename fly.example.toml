@@ -1,0 +1,69 @@
+# Example Fly.io configuration for gleam-pds.
+#
+# Copy this to fly.toml and fill in your own app name and hostnames; the real
+# fly.toml is gitignored so your deployment details stay out of the repo.
+#
+# See https://fly.io/docs/reference/configuration/ for the full reference.
+
+app = 'your-pds'
+primary_region = 'iad'
+
+[env]
+  GLEAM_PDS_DB_PATH = '/data/gleam_pds.db'
+  # Handles are issued under this domain, so alice becomes alice.example.com.
+  GLEAM_PDS_HANDLE_DOMAIN = 'example.com'
+  # Public hostname of the PDS, and its did:web identity.
+  GLEAM_PDS_HOSTNAME = 'pds.example.com'
+  GLEAM_PDS_PORT = '8080'
+  GLEAM_PDS_PUBLIC_URL = 'https://pds.example.com'
+  # Account creation is closed by default. Set this to 'false' (or remove it)
+  # once you are ready to let people register, and note that a fly secret of
+  # the same name overrides whatever is set here.
+  GLEAM_PDS_SIGNUPS_DISABLED = 'true'
+  # Cloudflare Turnstile sitekey, which is public and identifies the widget in
+  # the browser. The matching GLEAM_PDS_TURNSTILE_SECRET_KEY is a fly secret and
+  # never belongs in this file. Leave both unset to run without a captcha.
+  # GLEAM_PDS_TURNSTILE_SITE_KEY = '0x0000000000000000000000'
+
+# GLEAM_PDS_SECRET and GLEAM_PDS_ROTATION_KEY are deliberately absent: secrets
+# must never be committed. Set them before the first deploy with:
+#   fly secrets set GLEAM_PDS_SECRET=$(openssl rand -hex 32)
+#   fly secrets set GLEAM_PDS_ROTATION_KEY=$(openssl rand -hex 32)
+# The server refuses to boot without a strong GLEAM_PDS_SECRET rather than
+# falling back to a default. Keep a copy of the rotation key somewhere safe:
+# losing it means losing rotation control over every DID issued under it.
+
+[[mounts]]
+  source = 'pds_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # This is a STATEFUL PDS: the firehose sequencer and open WebSocket
+  # subscriptions must not be torn down. 'stop' would kill the machine when
+  # idle, dropping every subscriber. Keep it running with at least one machine.
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'get'
+    path = '/xrpc/_health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+
+# --- Backups -----------------------------------------------------------------
+# Every account, repo, record, and raw blob lives in one SQLite file on the
+# pds_data volume. Because blobs are stored inline, losing that file loses the
+# whole server, so set up a backup before anyone relies on this:
+#   - Litestream continuous replication of the database to S3/R2, or
+#   - periodic `fly volumes snapshots` plus off-box `.backup` copies.
+# Fly volume snapshots alone are coarse and per-volume, so they are not enough
+# on their own. This single-process image has no room for a sidecar without
+# changes to the Dockerfile.

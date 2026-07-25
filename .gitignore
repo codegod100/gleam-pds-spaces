@@ -1,0 +1,17 @@
+# Gleam / BEAM build output
+build/
+*.beam
+*.ez
+erl_crash.dump
+
+# The SQLite file is the entire server. Never commit it.
+*.db
+*.db-shm
+*.db-wal
+
+# Real deployment config. Copy the .example files and fill in your own.
+fly.toml
+gleam-pds.service
+
+# macOS
+.DS_Store
