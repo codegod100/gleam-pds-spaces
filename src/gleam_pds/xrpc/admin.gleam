@@ -8,6 +8,7 @@ import gleam_pds/crypto
 import gleam_pds/firehose
 import gleam_pds/web/response
 import gleam/bit_array
+import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
@@ -341,7 +342,7 @@ fn status_attr_json(applied: Bool, ref: Option(String)) -> json.Json {
   }
 }
 
-fn decode_repo_did(subject: decode.Dynamic) -> Result(String, Nil) {
+fn decode_repo_did(subject: Dynamic) -> Result(String, Nil) {
   let decoder = {
     use did <- decode.field("did", decode.string)
     decode.success(did)
