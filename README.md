@@ -8,6 +8,14 @@ An [AT Protocol](https://atproto.com) Personal Data Server, written in
 [Gleam](https://gleam.run) on the BEAM. The package and module name is
 `gleam_pds`, since Gleam names can't contain hyphens.
 
+> **This repository** is a GitHub fork of
+> [tangled.org/brookie.blog/gleam-pds](https://tangled.org/brookie.blog/gleam-pds)
+> (`gleam-pds`). On the `permissioned-data` branch it adds a **spaces /
+> permissioned-data scaffold only** — vendored lexicons, SQLite tables, and
+> compiling XRPC route stubs. It is **not** a working spaces host (no LtHash
+> commits, full sync, credentials, or notify fan-out). See
+> [`docs/permissioned-data.md`](docs/permissioned-data.md).
+
 It is a real, federating PDS: accounts created on it are ingested by the
 official `bsky.network` relay and indexed by the Bluesky appview. A running
 instance serves [pds.readifur.gay](https://pds.readifur.gay).
@@ -27,6 +35,11 @@ than something to put other people's accounts on:
   the account signing key as the rotation key. Set it (see below).
 - Test coverage is thin: crypto and repo units only, no HTTP or federation
   tests.
+- **Spaces / permissioned-data:** scaffold only on this fork. Schema version 4
+  creates `space*` tables; `com.atproto.space.*` and
+  `com.atproto.simplespace.*` routes require auth and either return empty
+  collections or `MethodNotImplemented`. Not production-ready for private
+  shared data.
 
 ## What works
 
@@ -59,6 +72,10 @@ server-issued nonces (stateless, rotating every 5 minutes) and the standard
 `use_dpop_nonce` retry flow on both the token endpoint and resource requests;
 `login_hint` prefill on the authorize form.
 
+**Spaces (scaffold only):** routes for `com.atproto.space.*` and
+`com.atproto.simplespace.*` are registered; SQLite tables exist. Handlers do
+not yet create spaces, write records, sync repos, or issue credentials.
+
 Anything under `app.bsky.*` or `chat.bsky.*` that is not stored locally is
 proxied to the appview.
 
@@ -74,11 +91,13 @@ src/
   gleam_pds/crypto.gleam       JWT, P-256, PBKDF2, CIDs, DPoP
   gleam_pds/firehose.gleam     sequencer actor + subscribeRepos WebSocket
   gleam_pds/plc.gleam          did:plc registration and operations
-  gleam_pds/xrpc/              com.atproto.* handlers (server, repo, sync, identity, account)
+  gleam_pds/xrpc/              com.atproto.* handlers (server, repo, sync, identity, account, space, simplespace)
   gleam_pds/oauth/             OAuth 2.1 authorization server
   gleam_pds/passkey/           WebAuthn registration and login
   gleam_pds/web/               landing/login/register pages, response helpers
   *_ffi.erl                    Erlang FFI: CBOR, MST, crypto, WebAuthn, PLC, rate limits
+lexicons/                      vendored ATProto lexicon JSON (space / simplespace scaffold)
+docs/permissioned-data.md      what the spaces scaffold covers and what it does not
 ```
 
 One rule worth knowing before you touch the FFI: **Erlang FFI modules must not
