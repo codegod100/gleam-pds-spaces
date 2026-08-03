@@ -6,7 +6,7 @@ import gleam_pds/web/response
 import gleam/bytes_tree
 import gleam/dynamic/decode
 import gleam/int
-import gleam/option
+import gleam/option.{None, Some}
 import gleam/json
 import gleam/list
 import gleam/result
@@ -158,20 +158,26 @@ pub fn list_repos(req: Request, ctx: Context) -> Response {
     use h <- decode.field(1, decode.string)
     use head <- decode.field(2, decode.optional(decode.string))
     use rev <- decode.field(3, decode.optional(decode.string))
-    decode.success(#(d, h, head, rev))
+    use deactivated <- decode.field(4, decode.optional(decode.string))
+    use takedown <- decode.field(5, decode.optional(decode.string))
+    decode.success(#(d, h, head, rev, deactivated, takedown))
   }
 
   let result = case cursor {
     "" ->
       sqlight.query(
-        "SELECT a.did, a.handle, r.head, r.rev FROM accounts a LEFT JOIN repos r ON a.did = r.did ORDER BY a.did LIMIT ?",
+        "SELECT a.did, a.handle, r.head, r.rev, a.deactivated_at, a.takedown_ref
+         FROM accounts a LEFT JOIN repos r ON a.did = r.did
+         ORDER BY a.did LIMIT ?",
         ctx.db,
         [sqlight.int(limit)],
         row_decoder,
       )
     cur ->
       sqlight.query(
-        "SELECT a.did, a.handle, r.head, r.rev FROM accounts a LEFT JOIN repos r ON a.did = r.did WHERE a.did > ? ORDER BY a.did LIMIT ?",
+        "SELECT a.did, a.handle, r.head, r.rev, a.deactivated_at, a.takedown_ref
+         FROM accounts a LEFT JOIN repos r ON a.did = r.did
+         WHERE a.did > ? ORDER BY a.did LIMIT ?",
         ctx.db,
         [sqlight.text(cur), sqlight.int(limit)],
         row_decoder,
@@ -182,22 +188,42 @@ pub fn list_repos(req: Request, ctx: Context) -> Response {
     Ok(accounts) -> {
       let repos =
         list.map(accounts, fn(acc) {
-          let #(did, _handle, maybe_head, maybe_rev) = acc
-          let head = option.unwrap(maybe_head, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
+          let #(did, _handle, maybe_head, maybe_rev, deactivated, takedown) =
+            acc
+          let head =
+            option.unwrap(
+              maybe_head,
+              "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            )
           let rev = option.unwrap(maybe_rev, crypto.generate_tid())
-          json.object([
-            #("did", json.string(did)),
-            #("head", json.string(head)),
-            #("rev", json.string(rev)),
-            #("active", json.bool(True)),
-          ])
+          let active = case deactivated, takedown {
+            None, None -> True
+            _, _ -> False
+          }
+          let status_fields = case deactivated, takedown {
+            Some(_), _ -> [#("status", json.string("deactivated"))]
+            None, Some(_) -> [#("status", json.string("takendown"))]
+            None, None -> []
+          }
+          json.object(
+            list.append(
+              [
+                #("did", json.string(did)),
+                #("head", json.string(head)),
+                #("rev", json.string(rev)),
+                #("active", json.bool(active)),
+              ],
+              status_fields,
+            ),
+          )
         })
 
       let next_cursor = case list.length(accounts) == limit {
-        True -> case list.last(accounts) {
-          Ok(#(last_did, _, _, _)) -> json.string(last_did)
-          Error(_) -> json.null()
-        }
+        True ->
+          case list.last(accounts) {
+            Ok(#(last_did, _, _, _, _, _)) -> json.string(last_did)
+            Error(_) -> json.null()
+          }
         False -> json.null()
       }
 

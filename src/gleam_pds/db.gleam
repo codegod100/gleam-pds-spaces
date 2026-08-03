@@ -5,7 +5,7 @@ import sqlight
 
 /// Current schema version recorded in `schema_migrations` after migrate/0 runs.
 /// Bump this whenever a new migration step is added below.
-pub const schema_version: Int = 4
+pub const schema_version: Int = 5
 
 /// Maximum allowed size (in bytes) for an inline blob stored in SQLite.
 /// Blob bytes are stored directly in `blobs.data` with no DB-level limit, so
@@ -61,6 +61,9 @@ pub fn migrate(db: sqlight.Connection) -> Result(Nil, sqlight.Error) {
 
   // --- schema_version 4: ATProto permissioned-data / spaces scaffold ---
   let assert Ok(_) = create_space_tables(db)
+
+  // --- schema_version 5: invite codes for PDS admin / pds-operator ---
+  let assert Ok(_) = create_invite_codes_tables(db)
 
   let assert Ok(_) = create_indexes(db)
   let assert Ok(_) = record_schema_version(db)
@@ -266,6 +269,38 @@ fn create_space_tables(db: sqlight.Connection) -> Result(Nil, sqlight.Error) {
         service_endpoint TEXT NOT NULL,
         last_issued_at TEXT NOT NULL,
         PRIMARY KEY (space, service_did)
+      );
+      ",
+      db,
+    )
+  Ok(Nil)
+}
+
+/// Invite codes for admin / pds-operator (schema_version 5).
+fn create_invite_codes_tables(
+  db: sqlight.Connection,
+) -> Result(Nil, sqlight.Error) {
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS invite_codes (
+        code TEXT PRIMARY KEY,
+        available INTEGER NOT NULL,
+        disabled INTEGER NOT NULL DEFAULT 0,
+        for_account TEXT NOT NULL DEFAULT 'admin',
+        created_by TEXT NOT NULL DEFAULT 'admin',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS invite_code_uses (
+        code TEXT NOT NULL,
+        used_by TEXT NOT NULL,
+        used_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       ",
       db,

@@ -635,7 +635,7 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
         const data = await resp.json();
         if (data.error) { showError(data.message || data.error); return; }
         localStorage.setItem('pds_session', JSON.stringify(data));
-        showSuccess('Signed in as ' + data.handle + ' (' + data.did + ')');
+        showSignedIn(data.handle, data.did);
       } catch(e) { showError('Login failed: ' + e.message); }
     }
     
@@ -673,7 +673,7 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
         if (finishData.error) { showError(finishData.message || finishData.error); return; }
         if (finishData.redirect) { window.location.href = finishData.redirect; return; }
         localStorage.setItem('pds_session', JSON.stringify(finishData));
-        showSuccess('Signed in as ' + finishData.handle + ' (' + finishData.did + ')');
+        showSignedIn(finishData.handle, finishData.did);
       } catch(e) { showError('Passkey login failed: ' + e.message); }
     }
     
@@ -688,6 +688,22 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
     function showError(msg) { const el = document.getElementById('error-msg'); el.textContent = msg; el.style.display = 'block'; }
     function showSuccess(msg) { const el = document.getElementById('success-msg'); el.textContent = msg; el.style.display = 'block'; }
     function hideMessages() { document.getElementById('error-msg').style.display = 'none'; document.getElementById('success-msg').style.display = 'none'; }
+    // The PDS has no account dashboard — after minting a session, send people
+    // into an ATProto client. Bluesky is the default; any client that asks for
+    // a PDS host can use this hostname.
+    function showSignedIn(handle, did) {
+      const card = document.querySelector('.card');
+      if (!card) { showSuccess('Signed in as ' + handle); return; }
+      const profile = 'https://bsky.app/profile/' + encodeURIComponent(handle);
+      card.innerHTML =
+        '<h1><i data-lucide=\"circle-check\"></i> Signed in</h1>' +
+        '<p class=\"sub\">@' + handle + '</p>' +
+        '<p style=\"color:var(--text-muted);font-size:0.9rem;line-height:1.55;margin-bottom:1.25rem;text-align:center\">' +
+        'This host is your personal data server, not an app. Open Bluesky (or another ATProto client) and sign in with this handle.</p>' +
+        '<a class=\"btn btn-primary btn-full\" href=\"' + profile + '\">Open in Bluesky <i data-lucide=\"arrow-right\"></i></a>' +
+        '<div class=\"links\" style=\"margin-top:1rem\"><code style=\"font-size:0.75rem;color:var(--text-faint)\">' + did + '</code></div>';
+      if (window.lucide) lucide.createIcons();
+    }
   </script>
   " <> lucide_script <> "
 </body>

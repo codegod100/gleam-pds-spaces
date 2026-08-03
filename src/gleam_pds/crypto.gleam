@@ -19,6 +19,10 @@ pub fn base64url_encode(data: BitArray) -> String
 @external(erlang, "gleam_pds_crypto_ffi", "base64url_decode")
 pub fn base64url_decode(data: String) -> Result(BitArray, Nil)
 
+/// Standard (non-URL) base64 decode. Used for HTTP Basic auth credentials.
+@external(erlang, "gleam_pds_crypto_ffi", "base64_decode")
+pub fn base64_decode(data: String) -> Result(BitArray, Nil)
+
 // ---- Key generation ----
 
 pub type KeyPair {
