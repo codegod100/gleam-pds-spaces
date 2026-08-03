@@ -5,7 +5,7 @@ import sqlight
 
 /// Current schema version recorded in `schema_migrations` after migrate/0 runs.
 /// Bump this whenever a new migration step is added below.
-pub const schema_version: Int = 3
+pub const schema_version: Int = 4
 
 /// Maximum allowed size (in bytes) for an inline blob stored in SQLite.
 /// Blob bytes are stored directly in `blobs.data` with no DB-level limit, so
@@ -58,6 +58,9 @@ pub fn migrate(db: sqlight.Connection) -> Result(Nil, sqlight.Error) {
 
   // --- schema_version 3 ---
   let assert Ok(_) = migrate_oauth_auth_requests_add_login_hint(db)
+
+  // --- schema_version 4: ATProto permissioned-data / spaces scaffold ---
+  let assert Ok(_) = create_space_tables(db)
 
   let assert Ok(_) = create_indexes(db)
   let assert Ok(_) = record_schema_version(db)
@@ -156,6 +159,117 @@ fn migrate_oauth_auth_requests_add_login_hint(
 ) -> Result(Nil, sqlight.Error) {
   let _ =
     sqlight.exec("ALTER TABLE oauth_auth_requests ADD COLUMN login_hint TEXT;", db)
+  Ok(Nil)
+}
+
+/// Space tables for ATProto permissioned-data (schema_version 4).
+/// Mirrors bluesky-social/atproto `permissioned-data` branch migration
+/// `packages/pds/src/actor-store/db/migrations/002-space.ts`, adapted to
+/// gleam-pds SQLite TEXT/INTEGER/BLOB style. Handlers are stubs; these tables
+/// exist so later work can persist spaces without another schema bump.
+fn create_space_tables(db: sqlight.Connection) -> Result(Nil, sqlight.Error) {
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space (
+        uri TEXT PRIMARY KEY,
+        is_owner INTEGER NOT NULL,
+        policy TEXT NOT NULL DEFAULT 'member-list',
+        managing_app TEXT,
+        app_access_type TEXT NOT NULL DEFAULT 'open',
+        app_allowed TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_member (
+        space TEXT NOT NULL,
+        did TEXT NOT NULL,
+        PRIMARY KEY (space, did)
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_record (
+        space TEXT NOT NULL,
+        collection TEXT NOT NULL,
+        rkey TEXT NOT NULL,
+        cid TEXT NOT NULL,
+        value BLOB NOT NULL,
+        repo_rev TEXT NOT NULL,
+        indexed_at TEXT NOT NULL,
+        PRIMARY KEY (space, collection, rkey)
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE INDEX IF NOT EXISTS space_record_rev_idx ON space_record(space, repo_rev);",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_repo (
+        space TEXT PRIMARY KEY,
+        set_hash BLOB,
+        rev TEXT
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_record_oplog (
+        space TEXT NOT NULL,
+        rev TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        collection TEXT NOT NULL,
+        rkey TEXT NOT NULL,
+        cid TEXT,
+        prev TEXT,
+        PRIMARY KEY (space, rev, idx)
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_writer (
+        space TEXT NOT NULL,
+        did TEXT NOT NULL,
+        rev TEXT NOT NULL,
+        hash BLOB NOT NULL,
+        PRIMARY KEY (space, did)
+      );
+      ",
+      db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "
+      CREATE TABLE IF NOT EXISTS space_credential_recipient (
+        space TEXT NOT NULL,
+        service_did TEXT NOT NULL,
+        service_endpoint TEXT NOT NULL,
+        last_issued_at TEXT NOT NULL,
+        PRIMARY KEY (space, service_did)
+      );
+      ",
+      db,
+    )
   Ok(Nil)
 }
 

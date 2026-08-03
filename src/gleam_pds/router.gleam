@@ -10,6 +10,8 @@ import gleam_pds/xrpc/identity
 import gleam_pds/xrpc/proxy
 import gleam_pds/xrpc/repo
 import gleam_pds/xrpc/server
+import gleam_pds/xrpc/simplespace
+import gleam_pds/xrpc/space
 import gleam_pds/xrpc/sync
 import gleam/dynamic/decode
 import gleam/http.{Get, Options, Post}
@@ -153,6 +155,44 @@ fn handle_xrpc(req: Request, ctx: Context, method: String) -> Response {
     "com.atproto.sync.listRepos", Get -> sync.list_repos(req, ctx)
     "com.atproto.sync.getLatestCommit", Get -> sync.get_latest_commit(req, ctx)
     "com.atproto.sync.getRepoStatus", Get -> sync.get_repo_status(req, ctx)
+    // com.atproto.space.* (permissioned-data scaffold — stubs)
+    "com.atproto.space.listSpaces", Get -> space.list_spaces(req, ctx)
+    "com.atproto.space.getSpace", Get -> space.get_space(req, ctx)
+    "com.atproto.space.getSpaceCredential", Post ->
+      space.get_space_credential(req, ctx)
+    "com.atproto.space.notifySpaceDeleted", Post ->
+      space.notify_space_deleted(req, ctx)
+    "com.atproto.space.applyWrites", Post -> space.apply_writes(req, ctx)
+    "com.atproto.space.createRecord", Post -> space.create_record(req, ctx)
+    "com.atproto.space.putRecord", Post -> space.put_record(req, ctx)
+    "com.atproto.space.deleteRecord", Post -> space.delete_record(req, ctx)
+    "com.atproto.space.getRecord", Get -> space.get_record(req, ctx)
+    "com.atproto.space.listRecords", Get -> space.list_records(req, ctx)
+    "com.atproto.space.getRepo", Get -> space.get_repo(req, ctx)
+    "com.atproto.space.getLatestCommit", Get ->
+      space.get_latest_commit(req, ctx)
+    "com.atproto.space.listRepos", Get -> space.list_repos(req, ctx)
+    "com.atproto.space.listRepoOps", Get -> space.list_repo_ops(req, ctx)
+    "com.atproto.space.getBlob", Get -> space.get_blob(req, ctx)
+    "com.atproto.space.getDelegationToken", Get ->
+      space.get_delegation_token(req, ctx)
+    "com.atproto.space.notifyWrite", Post -> space.notify_write(req, ctx)
+    "com.atproto.space.registerNotify", Post -> space.register_notify(req, ctx)
+    // com.atproto.simplespace.* (permissioned-data scaffold — stubs)
+    "com.atproto.simplespace.createSpace", Post ->
+      simplespace.create_space(req, ctx)
+    "com.atproto.simplespace.updateSpace", Post ->
+      simplespace.update_space(req, ctx)
+    "com.atproto.simplespace.deleteSpace", Post ->
+      simplespace.delete_space(req, ctx)
+    "com.atproto.simplespace.addMember", Post ->
+      simplespace.add_member(req, ctx)
+    "com.atproto.simplespace.removeMember", Post ->
+      simplespace.remove_member(req, ctx)
+    "com.atproto.simplespace.listMembers", Get ->
+      simplespace.list_members(req, ctx)
+    "com.atproto.simplespace.checkUserAccess", Get ->
+      simplespace.check_user_access(req, ctx)
     // Preferences stored locally on PDS
     "app.bsky.actor.getPreferences", Get -> proxy.get_preferences(req, ctx)
     "app.bsky.actor.putPreferences", Post -> proxy.put_preferences(req, ctx)
