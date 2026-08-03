@@ -19,6 +19,10 @@ pub type Config {
     turnstile_site_key: Option(String),
     turnstile_secret_key: Option(String),
     rotation_key: Option(BitArray),
+    /// PDS admin password for `admin:<password>` Basic auth on
+    /// `com.atproto.admin.*` and `com.atproto.server.createInviteCode`.
+    /// Unset disables the admin API (endpoints return 401).
+    admin_password: Option(String),
   )
 }
 
@@ -101,6 +105,11 @@ pub fn load() -> Config {
     _ -> None
   }
 
+  let admin_password = case envoy.get("GLEAM_PDS_ADMIN_PASSWORD") {
+    Ok(p) if p != "" -> Some(p)
+    _ -> None
+  }
+
   Config(
     hostname: hostname,
     handle_domain: handle_domain,
@@ -113,6 +122,7 @@ pub fn load() -> Config {
     turnstile_site_key: turnstile_site_key,
     turnstile_secret_key: turnstile_secret_key,
     rotation_key: rotation_key,
+    admin_password: admin_password,
   )
 }
 

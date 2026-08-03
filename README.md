@@ -130,6 +130,7 @@ gleam test
 | `GLEAM_PDS_RATELIMIT_DISABLED` | `false` | `true` disables rate limiting (local dev / load tests). |
 | `GLEAM_PDS_TURNSTILE_SITE_KEY` | unset | Cloudflare Turnstile sitekey; renders the captcha widget on the registration page. Unset disables the captcha. |
 | `GLEAM_PDS_TURNSTILE_SECRET_KEY` | unset | Matching Turnstile secret; `createAccount` verifies tokens against Cloudflare's siteverify directly. Keep it out of source and inject it like `GLEAM_PDS_SECRET`. |
+| `GLEAM_PDS_ADMIN_PASSWORD` | unset | Password for `admin:<password>` Basic auth on `com.atproto.admin.*` and `createInviteCode` (used by [pds-operator](https://tangled.org/brookie.blog/pds-operator)). Unset disables the admin API. |
 
 ### Handle DNS
 

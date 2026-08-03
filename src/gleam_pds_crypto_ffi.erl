@@ -2,6 +2,7 @@
 -export([
     base64url_encode/1,
     base64url_decode/1,
+    base64_decode/1,
     generate_p256_keypair/0,
     p256_public_from_private/1,
     sign_es256/2,
@@ -28,6 +29,16 @@ base64url_encode(Data) when is_binary(Data) ->
             binary:replace(B64, <<"+">>, <<"-">>, [global]),
             <<"/">>, <<"_">>, [global]),
         <<"=">>, <<>>, [global]).
+
+%% Standard base64 decode (Basic auth credentials, etc.).
+base64_decode(Str) when is_list(Str) ->
+    base64_decode(list_to_binary(Str));
+base64_decode(Str) when is_binary(Str) ->
+    try
+        {ok, base64:decode(Str)}
+    catch
+        error:badarg -> {error, nil}
+    end.
 
 base64url_decode(Str) when is_list(Str) ->
     base64url_decode(list_to_binary(Str));

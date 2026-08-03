@@ -6,6 +6,7 @@ import gleam_pds/ratelimit
 import gleam_pds/web/pages
 import gleam_pds/web/response
 import gleam_pds/xrpc/account
+import gleam_pds/xrpc/admin
 import gleam_pds/xrpc/identity
 import gleam_pds/xrpc/proxy
 import gleam_pds/xrpc/repo
@@ -155,6 +156,20 @@ fn handle_xrpc(req: Request, ctx: Context, method: String) -> Response {
     "com.atproto.sync.listRepos", Get -> sync.list_repos(req, ctx)
     "com.atproto.sync.getLatestCommit", Get -> sync.get_latest_commit(req, ctx)
     "com.atproto.sync.getRepoStatus", Get -> sync.get_repo_status(req, ctx)
+    // com.atproto.admin.* (PDS Operator / moderation)
+    "com.atproto.admin.getAccountInfos", Get ->
+      admin.get_account_infos(req, ctx)
+    "com.atproto.admin.getAccountInfo", Get -> admin.get_account_info(req, ctx)
+    "com.atproto.admin.updateSubjectStatus", Post ->
+      admin.update_subject_status(req, ctx)
+    "com.atproto.admin.updateAccountPassword", Post ->
+      admin.update_account_password(req, ctx)
+    "com.atproto.admin.getInviteCodes", Get ->
+      admin.get_invite_codes(req, ctx)
+    "com.atproto.admin.disableInviteCodes", Post ->
+      admin.disable_invite_codes(req, ctx)
+    "com.atproto.server.createInviteCode", Post ->
+      admin.create_invite_code(req, ctx)
     // com.atproto.space.* (permissioned-data scaffold — stubs)
     "com.atproto.space.listSpaces", Get -> space.list_spaces(req, ctx)
     "com.atproto.space.getSpace", Get -> space.get_space(req, ctx)
