@@ -6,7 +6,7 @@ import gleam_pds/web/response
 import gleam/bytes_tree
 import gleam/dynamic/decode
 import gleam/int
-import gleam/option
+import gleam/option.{None, Some}
 import gleam/json
 import gleam/list
 import gleam/result
