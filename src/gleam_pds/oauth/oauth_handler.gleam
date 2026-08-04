@@ -300,18 +300,23 @@ pub fn complete_authorization(
       },
     )
 
-  // Return the authorization code as JSON so the client can complete the
-  // redirect to redirect_uri itself (browser authorize UI uses fetch).
   case auth_req {
-    Ok([#(_redirect_uri, state)]) ->
-      response.json_response(
-        200,
-        json.object([
-          #("code", json.string(code)),
-          #("state", json.string(state)),
-          #("iss", json.string(ctx.config.public_url)),
-        ]),
-      )
+    Ok([#(redirect_uri, state)]) -> {
+      let sep = case string.contains(redirect_uri, "?") {
+        True -> "&"
+        False -> "?"
+      }
+      let redirect =
+        redirect_uri
+        <> sep
+        <> "code="
+        <> code
+        <> "&state="
+        <> state
+        <> "&iss="
+        <> ctx.config.public_url
+      wisp.redirect(redirect)
+    }
     _ ->
       response.json_response(
         200,
