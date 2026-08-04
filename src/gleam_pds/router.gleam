@@ -54,8 +54,14 @@ pub fn handle_request(req: Request, ctx: Context) -> Response {
     ["oauth", "jwks"] -> oauth_handler.jwks(req, ctx)
     ["oauth", "client-metadata.json"] -> oauth_handler.client_metadata(req, ctx)
     ["api", "passkey", ..rest] -> passkey_handler.handle(req, ctx, rest)
+    ["api", "account", "password"] ->
+      case req.method {
+        Post -> account.update_password(req, ctx)
+        _ -> wisp.method_not_allowed([Post])
+      }
     ["login"] -> pages.login_page(req, ctx)
     ["register"] -> pages.register_page(req, ctx)
+    ["account"] -> pages.account_page(req, ctx)
     [] -> pages.landing_page(req, ctx)
     _ -> wisp.not_found()
   }

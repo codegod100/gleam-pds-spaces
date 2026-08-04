@@ -5,7 +5,7 @@ import sqlight
 
 /// Current schema version recorded in `schema_migrations` after migrate/0 runs.
 /// Bump this whenever a new migration step is added below.
-pub const schema_version: Int = 4
+pub const schema_version: Int = 5
 
 /// Maximum allowed size (in bytes) for an inline blob stored in SQLite.
 /// Blob bytes are stored directly in `blobs.data` with no DB-level limit, so
@@ -61,6 +61,10 @@ pub fn migrate(db: sqlight.Connection) -> Result(Nil, sqlight.Error) {
 
   // --- schema_version 4: ATProto permissioned-data / spaces scaffold ---
   let assert Ok(_) = create_space_tables(db)
+
+  // --- schema_version 5: passkey management (name + indexes) ---
+  let assert Ok(_) = migrate_passkeys_add_name(db)
+  let assert Ok(_) = migrate_passkeys_indexes(db)
 
   let assert Ok(_) = create_indexes(db)
   let assert Ok(_) = record_schema_version(db)
@@ -463,11 +467,40 @@ fn create_passkeys_table(
       credential_id TEXT,
       public_key BLOB,
       sign_count INTEGER,
-      created_at TEXT
+      created_at TEXT,
+      name TEXT
     );
     ",
     db,
   )
+}
+
+/// Additive: older deployments created `passkeys` without a friendly `name`.
+fn migrate_passkeys_add_name(
+  db: sqlight.Connection,
+) -> Result(Nil, sqlight.Error) {
+  case
+    sqlight.exec("ALTER TABLE passkeys ADD COLUMN name TEXT;", db)
+  {
+    Ok(_) -> Ok(Nil)
+    Error(_) -> Ok(Nil)
+  }
+}
+
+fn migrate_passkeys_indexes(
+  db: sqlight.Connection,
+) -> Result(Nil, sqlight.Error) {
+  let _ =
+    sqlight.exec(
+      "CREATE INDEX IF NOT EXISTS idx_passkeys_did ON passkeys(did);",
+      db,
+    )
+  let _ =
+    sqlight.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_passkeys_credential_id ON passkeys(credential_id);",
+      db,
+    )
+  Ok(Nil)
 }
 
 fn create_oauth_codes_table(

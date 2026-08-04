@@ -7,7 +7,7 @@ import gleam_pds/web/response
 import gleam_pds/xrpc/server
 import gleam/bit_array
 import gleam/dynamic/decode
-import gleam/http.{Post}
+import gleam/http.{Delete, Get, Post}
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -101,6 +101,9 @@ pub fn handle(
   case req.method, path {
     Post, ["register", "begin"] -> register_begin(req, ctx)
     Post, ["register", "finish"] -> register_finish(req, ctx)
+    Get, ["list"] -> list_passkeys(req, ctx)
+    Post, ["delete"] -> delete_passkey(req, ctx)
+    Delete, ["delete"] -> delete_passkey(req, ctx)
     // Passkey login is an unauthenticated login path, so it gets the same
     // per-IP budget as createSession.
     Post, ["login", "begin"] -> login_guard(req, ctx, fn() { login_begin(req, ctx) })
@@ -231,22 +234,33 @@ fn register_finish(req: Request, ctx: Context) -> Response {
     Ok(user_did) -> {
       use body <- wisp.require_json(req)
 
-      // Decode the credential response - try nested structure
+      // Decode the credential response - try nested structure. Optional `name`
+      // is a friendly label shown in account settings.
       let nested_decoder = {
         use id <- decode.field("id", decode.string)
         use raw_id <- decode.field("rawId", decode.string)
+        use name <- decode.optional_field(
+          "name",
+          None,
+          decode.optional(decode.string),
+        )
         use resp <- decode.field("response", {
           use att_obj <- decode.field("attestationObject", decode.string)
           use cd <- decode.field("clientDataJSON", decode.string)
           decode.success(#(att_obj, cd))
         })
-        decode.success(#(id, raw_id, Some(resp.0), Some(resp.1)))
+        decode.success(#(id, raw_id, Some(resp.0), Some(resp.1), name))
       }
 
       let flat_decoder = {
         use id <- decode.field("id", decode.string)
         use raw_id <- decode.field("rawId", decode.string)
-        decode.success(#(id, raw_id, None, None))
+        use name <- decode.optional_field(
+          "name",
+          None,
+          decode.optional(decode.string),
+        )
+        decode.success(#(id, raw_id, None, None, name))
       }
 
       let parsed = case decode.run(body, nested_decoder) {
@@ -261,7 +275,7 @@ fn register_finish(req: Request, ctx: Context) -> Response {
             "InvalidRequest",
             "Invalid credential data",
           )
-        Ok(#(_cred_id, raw_id, att_obj, client_data)) -> {
+        Ok(#(_cred_id, raw_id, att_obj, client_data, name)) -> {
           // Verify a pending challenge exists
           let challenge_result =
             sqlight.query(
@@ -331,26 +345,54 @@ fn register_finish(req: Request, ctx: Context) -> Response {
                   // stored ID. The browser sends `id`, the base64url encoding.
                   let stored_cred_id = raw_id
                   let passkey_id = crypto.random_string(16)
-                  let _ =
+                  let label = case name {
+                    Some(n) -> {
+                      let trimmed = string.trim(n)
+                      case trimmed == "" {
+                        True -> None
+                        False -> Some(string.slice(trimmed, 0, 64))
+                      }
+                    }
+                    None -> None
+                  }
+                  let insert =
                     sqlight.query(
-                      "INSERT INTO passkeys (id, did, credential_id, public_key, sign_count) VALUES (?, ?, ?, ?, 0)",
+                      "INSERT INTO passkeys (id, did, credential_id, public_key, sign_count, created_at, name) VALUES (?, ?, ?, ?, 0, datetime('now'), ?) RETURNING id",
                       ctx.db,
                       [
                         sqlight.text(passkey_id),
                         sqlight.text(user_did),
                         sqlight.text(stored_cred_id),
                         sqlight.blob(public_key),
+                        sqlight.nullable(sqlight.text, label),
                       ],
                       decode.at([0], decode.string),
                     )
 
-                  response.json_response(
-                    200,
-                    json.object([
-                      #("status", json.string("ok")),
-                      #("credentialId", json.string(stored_cred_id)),
-                    ]),
-                  )
+                  case insert {
+                    Ok([_]) ->
+                      response.json_response(
+                        200,
+                        json.object([
+                          #("status", json.string("ok")),
+                          #("id", json.string(passkey_id)),
+                          #("credentialId", json.string(stored_cred_id)),
+                          #(
+                            "name",
+                            case label {
+                              Some(n) -> json.string(n)
+                              None -> json.null()
+                            },
+                          ),
+                        ]),
+                      )
+                    _ ->
+                      response.xrpc_error(
+                        400,
+                        "InvalidRequest",
+                        "Passkey already registered or could not be stored",
+                      )
+                  }
                 }
               }
             }
@@ -364,6 +406,134 @@ fn register_finish(req: Request, ctx: Context) -> Response {
         }
       }
     }
+  }
+}
+
+// -- List / delete (account management) --
+
+fn list_passkeys(req: Request, ctx: Context) -> Response {
+  case server.get_auth_did_full(req, ctx) {
+    Error(resp) -> resp
+    Ok(user_did) -> {
+      let row_decoder = {
+        use id <- decode.field(0, decode.string)
+        use credential_id <- decode.field(1, decode.string)
+        use created_at <- decode.field(2, decode.optional(decode.string))
+        use name <- decode.field(3, decode.optional(decode.string))
+        decode.success(#(id, credential_id, created_at, name))
+      }
+      let rows =
+        sqlight.query(
+          "SELECT id, credential_id, created_at, name FROM passkeys WHERE did = ? ORDER BY created_at DESC, id",
+          ctx.db,
+          [sqlight.text(user_did)],
+          row_decoder,
+        )
+      case rows {
+        Ok(passkeys) ->
+          response.json_response(
+            200,
+            json.object([
+              #(
+                "passkeys",
+                json.array(passkeys, fn(p) {
+                  let #(id, credential_id, created_at, name) = p
+                  json.object([
+                    #("id", json.string(id)),
+                    #("credentialId", json.string(credential_id)),
+                    #(
+                      "createdAt",
+                      case created_at {
+                        Some(c) -> json.string(c)
+                        None -> json.null()
+                      },
+                    ),
+                    #(
+                      "name",
+                      case name {
+                        Some(n) -> json.string(n)
+                        None -> json.null()
+                      },
+                    ),
+                  ])
+                }),
+              ),
+            ]),
+          )
+        _ ->
+          response.json_response(
+            200,
+            json.object([#("passkeys", json.preprocessed_array([]))]),
+          )
+      }
+    }
+  }
+}
+
+fn delete_passkey(req: Request, ctx: Context) -> Response {
+  case server.get_auth_did_full(req, ctx) {
+    Error(resp) -> resp
+    Ok(user_did) -> {
+      use body <- wisp.require_json(req)
+      let decoder = {
+        use credential_id <- decode.optional_field(
+          "credentialId",
+          None,
+          decode.optional(decode.string),
+        )
+        use id <- decode.optional_field(
+          "id",
+          None,
+          decode.optional(decode.string),
+        )
+        decode.success(#(credential_id, id))
+      }
+      case decode.run(body, decoder) {
+        Error(_) ->
+          response.xrpc_error(400, "InvalidRequest", "Invalid request body")
+        Ok(#(None, None)) ->
+          response.xrpc_error(
+            400,
+            "InvalidRequest",
+            "Missing credentialId or id",
+          )
+        Ok(#(Some(credential_id), _)) -> {
+          let deleted =
+            sqlight.query(
+              "DELETE FROM passkeys WHERE did = ? AND credential_id = ? RETURNING id",
+              ctx.db,
+              [sqlight.text(user_did), sqlight.text(credential_id)],
+              decode.at([0], decode.string),
+            )
+          delete_passkey_result(deleted)
+        }
+        Ok(#(None, Some(id))) -> {
+          let deleted =
+            sqlight.query(
+              "DELETE FROM passkeys WHERE did = ? AND id = ? RETURNING id",
+              ctx.db,
+              [sqlight.text(user_did), sqlight.text(id)],
+              decode.at([0], decode.string),
+            )
+          delete_passkey_result(deleted)
+        }
+      }
+    }
+  }
+}
+
+fn delete_passkey_result(
+  deleted: Result(List(String), sqlight.Error),
+) -> Response {
+  case deleted {
+    Ok([_]) ->
+      response.json_response(
+        200,
+        json.object([#("status", json.string("ok"))]),
+      )
+    Ok([]) -> response.xrpc_error(404, "NotFound", "Passkey not found")
+    _ ->
+      response.xrpc_error(500, "InternalError", "Failed to delete passkey")
   }
 }
 
