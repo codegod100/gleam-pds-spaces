@@ -18,7 +18,8 @@ An [AT Protocol](https://atproto.com) Personal Data Server, written in
 
 It is a real, federating PDS: accounts created on it are ingested by the
 official `bsky.network` relay and indexed by the Bluesky appview. A running
-instance serves [pds.readifur.gay](https://pds.readifur.gay).
+instance serves [pds.boxd.sh](https://pds.boxd.sh) (also mirrored historically
+at [pds.readifur.gay](https://pds.readifur.gay)).
 
 Everything lives in one OTP application and one SQLite file: no Postgres, no
 Redis, no sidecars. It is small enough to read end to end.
