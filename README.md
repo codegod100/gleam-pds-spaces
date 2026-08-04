@@ -10,10 +10,10 @@ An [AT Protocol](https://atproto.com) Personal Data Server, written in
 
 > **This repository** is a GitHub fork of
 > [tangled.org/brookie.blog/gleam-pds](https://tangled.org/brookie.blog/gleam-pds)
-> (`gleam-pds`). On the `permissioned-data` branch it adds a **spaces /
-> permissioned-data scaffold only** — vendored lexicons, SQLite tables, and
-> compiling XRPC route stubs. It is **not** a working spaces host (no LtHash
-> commits, full sync, credentials, or notify fan-out). See
+> (`gleam-pds`). It adds a **spaces / permissioned-data scaffold only** —
+> vendored lexicons, SQLite tables, and compiling XRPC route stubs. It is
+> **not** a working spaces host (no LtHash commits, full sync, credentials, or
+> notify fan-out). Usage guide:
 > [`docs/permissioned-data.md`](docs/permissioned-data.md).
 
 It is a real, federating PDS: accounts created on it are ingested by the
@@ -99,7 +99,7 @@ src/
   gleam_pds/web/               landing/login/register/account pages, response helpers
   *_ffi.erl                    Erlang FFI: CBOR, MST, crypto, WebAuthn, PLC, rate limits
 lexicons/                      vendored ATProto lexicon JSON (space / simplespace scaffold)
-docs/permissioned-data.md      what the spaces scaffold covers and what it does not
+docs/permissioned-data.md      how to use the spaces / permissioned-data surface (scaffold today)
 ```
 
 One rule worth knowing before you touch the FFI: **Erlang FFI modules must not
