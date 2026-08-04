@@ -1,5 +1,7 @@
 /// XRPC com.atproto.server.* account-lifecycle handlers:
 /// deactivate / activate / status, deleteAccount, and app passwords.
+/// Also hosts `update_password` for the custom `/api/account/password` route
+/// (ATProto has no user-facing updateAccountPassword lexicon).
 ///
 /// Auth policy: account management requires a full-access session (see
 /// `server.get_auth_did_full`) — an app-password session must not be able to
@@ -380,4 +382,121 @@ pub fn revoke_app_password(req: Request, ctx: Context) -> Response {
 fn generate_app_password() -> String {
   let group = fn() { string.lowercase(crypto.random_string(4)) }
   group() <> "-" <> group() <> "-" <> group() <> "-" <> group()
+}
+
+// ---------------------------------------------------------------------------
+// update_password — custom /api/account/password (not an ATProto lexicon)
+// ---------------------------------------------------------------------------
+
+/// Change the account's main password. Requires the current main password
+/// (app passwords cannot authorize this). Other sessions for the DID are
+/// revoked so stolen refresh tokens die with the old password; the caller's
+/// session is kept.
+pub fn update_password(req: Request, ctx: Context) -> Response {
+  case server.get_auth_did_full(req, ctx) {
+    Error(resp) -> resp
+    Ok(user_did) -> {
+      use body <- wisp.require_json(req)
+      let decoder = {
+        use current_password <- decode.field("currentPassword", decode.string)
+        use new_password <- decode.field("newPassword", decode.string)
+        decode.success(#(current_password, new_password))
+      }
+      case decode.run(body, decoder) {
+        Error(_) ->
+          response.xrpc_error(
+            400,
+            "InvalidRequest",
+            "Missing currentPassword or newPassword",
+          )
+        Ok(#(current_password, new_password)) -> {
+          let new_trimmed = string.trim(new_password)
+          case string.length(new_trimmed) < 8 {
+            True ->
+              response.xrpc_error(
+                400,
+                "InvalidRequest",
+                "New password must be at least 8 characters",
+              )
+            False ->
+              do_update_password(req, ctx, user_did, current_password, new_trimmed)
+          }
+        }
+      }
+    }
+  }
+}
+
+fn do_update_password(
+  req: Request,
+  ctx: Context,
+  user_did: String,
+  current_password: String,
+  new_password: String,
+) -> Response {
+  let pw_result =
+    sqlight.query(
+      "SELECT password_hash FROM accounts WHERE did = ? LIMIT 1",
+      ctx.db,
+      [sqlight.text(user_did)],
+      decode.at([0], decode.optional(decode.string)),
+    )
+  case pw_result {
+    Ok([Some(pw_hash)]) ->
+      case crypto.verify_password(current_password, pw_hash) {
+        False ->
+          response.xrpc_error(
+            401,
+            "AuthenticationRequired",
+            "Current password is incorrect",
+          )
+        True -> {
+          let new_hash = crypto.hash_password(new_password)
+          let updated =
+            sqlight.query(
+              "UPDATE accounts SET password_hash = ? WHERE did = ? RETURNING did",
+              ctx.db,
+              [sqlight.text(new_hash), sqlight.text(user_did)],
+              decode.at([0], decode.string),
+            )
+          case updated {
+            Ok([_]) -> {
+              // Drop every other session so a compromised password cannot keep
+              // refreshing. Keep the caller's access JWT so the UI stays signed in.
+              case server.get_bearer_token(req) {
+                Ok(token) -> {
+                  let _ =
+                    sqlight.query(
+                      "DELETE FROM sessions WHERE did = ? AND access_jwt != ?",
+                      ctx.db,
+                      [sqlight.text(user_did), sqlight.text(token)],
+                      decode.at([0], decode.string),
+                    )
+                  Nil
+                }
+                Error(_) -> Nil
+              }
+              response.json_response(
+                200,
+                json.object([#("status", json.string("ok"))]),
+              )
+            }
+            _ ->
+              response.xrpc_error(
+                500,
+                "InternalError",
+                "Failed to update password",
+              )
+          }
+        }
+      }
+    Ok([None]) | Ok([]) ->
+      response.xrpc_error(
+        400,
+        "InvalidRequest",
+        "Account has no password set",
+      )
+    _ ->
+      response.xrpc_error(500, "InternalError", "Failed to load account")
+  }
 }

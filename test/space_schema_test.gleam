@@ -34,7 +34,7 @@ pub fn space_tables_migrate_test() {
       decode.at([0], decode.int),
     )
   version |> should.equal(db.schema_version)
-  version |> should.equal(4)
+  version |> should.equal(5)
 
   let assert Ok([_]) =
     sqlight.query(

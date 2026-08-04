@@ -58,11 +58,13 @@ wildcard subdomain handles resolved via `/.well-known/atproto-did`,
 `resolveHandle` / `resolveDid` / `resolveIdentity` / `updateHandle`,
 `signPlcOperation` / `submitPlcOperation`.
 
-**Accounts & auth:** password login by handle, DID, or email; app passwords
-(scoped so they cannot manage the account); passkeys/WebAuthn with challenge,
-origin, and counter verification; deactivate / activate / delete with cascade;
-per-IP and per-credential rate limiting; optional Cloudflare Turnstile on
-registration, verified server-side before any account work.
+**Accounts & auth:** password login by handle, DID, or email; change password
+from `/account` (`POST /api/account/password`); app passwords (scoped so they
+cannot manage the account); passkeys/WebAuthn with challenge, origin, and
+counter verification — multiple passkeys per account with list/add/delete on
+`/account`; deactivate / activate / delete with cascade; per-IP and
+per-credential rate limiting; optional Cloudflare Turnstile on registration,
+verified server-side before any account work.
 
 **OAuth:** authorization-code flow with mandatory PAR and S256 PKCE;
 client-metadata documents fetched and validated at PAR time (registered
@@ -93,8 +95,8 @@ src/
   gleam_pds/plc.gleam          did:plc registration and operations
   gleam_pds/xrpc/              com.atproto.* handlers (server, repo, sync, identity, account, space, simplespace)
   gleam_pds/oauth/             OAuth 2.1 authorization server
-  gleam_pds/passkey/           WebAuthn registration and login
-  gleam_pds/web/               landing/login/register pages, response helpers
+  gleam_pds/passkey/           WebAuthn registration, login, list, delete
+  gleam_pds/web/               landing/login/register/account pages, response helpers
   *_ffi.erl                    Erlang FFI: CBOR, MST, crypto, WebAuthn, PLC, rate limits
 lexicons/                      vendored ATProto lexicon JSON (space / simplespace scaffold)
 docs/permissioned-data.md      what the spaces scaffold covers and what it does not
@@ -181,8 +183,13 @@ A session created from the account password carries scope
 `com.atproto.appPass`. App-password sessions can read and write repo content
 but are refused (403) on account management: creating or revoking app
 passwords, deleting/deactivating/activating the account, changing the handle,
-signing PLC operations, and registering passkeys. Refreshing a session
-preserves its scope, so an app password cannot escalate itself.
+signing PLC operations, registering or deleting passkeys, and changing the
+account password. Refreshing a session preserves its scope, so an app password
+cannot escalate itself.
+
+Password changes require the current main password and revoke every other
+session for that DID (the caller's session is kept). Passkey management lives
+on `/account` and the `/api/passkey/list` + `/api/passkey/delete` endpoints.
 
 Deactivated accounts can still sign in (the response carries
 `active: false`), but every endpoint other than `getSession`,

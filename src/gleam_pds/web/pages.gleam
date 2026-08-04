@@ -616,7 +616,7 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
     </form>
     
     <div class='links'>
-      <a href='/register'>Create an account</a> &middot; <a href='/'>Home</a>
+      <a href='/register'>Create an account</a> &middot; <a href='/account'>Account</a> &middot; <a href='/'>Home</a>
     </div>
   </div>
   <script>
@@ -637,7 +637,7 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
         const data = await resp.json();
         if (data.error) { showError(data.message || data.error); return; }
         localStorage.setItem('pds_session', JSON.stringify(data));
-        showSuccess('Signed in as ' + data.handle + ' (' + data.did + ')');
+        window.location.href = '/account';
       } catch(e) { showError('Login failed: ' + e.message); }
     }
     
@@ -675,7 +675,7 @@ pub fn login_page(_req: Request, ctx: Context) -> Response {
         if (finishData.error) { showError(finishData.message || finishData.error); return; }
         if (finishData.redirect) { window.location.href = finishData.redirect; return; }
         localStorage.setItem('pds_session', JSON.stringify(finishData));
-        showSuccess('Signed in as ' + finishData.handle + ' (' + finishData.did + ')');
+        window.location.href = '/account';
       } catch(e) { showError('Passkey login failed: ' + e.message); }
     }
     
@@ -947,10 +947,13 @@ fn register_form_page(ctx: Context) -> Response {
     </form>
     
     <div class='passkey-section' id='passkey-section'>
-      <p style='text-align:center;color:#b6b3b0;font-size:0.85rem;margin-bottom:0.75rem;'>Add a passkey for passwordless login:</p>
+      <p style='text-align:center;color:var(--text-muted);font-size:0.85rem;margin-bottom:0.75rem;'>Add a passkey for passwordless login (optional):</p>
       <button class='btn btn-soft btn-full' id='passkey-btn' onclick='registerPasskey()'>
         <i data-lucide='fingerprint'></i> Register Passkey
       </button>
+      <div class='links' style='margin-top:1rem;'>
+        <a href='/account'>Account settings</a> &middot; <a href='/login'>Sign in</a>
+      </div>
     </div>
     
     <div class='links'>
@@ -1034,9 +1037,8 @@ fn register_form_page(ctx: Context) -> Response {
         });
         const result = await finishResp.json();
         if (result.error) { showError(result.message || result.error); return; }
-        showSuccess('Passkey registered! You can now sign in with it.');
-        document.getElementById('passkey-btn').innerHTML = '<i data-lucide=\"circle-check\"></i> Passkey Registered';
-        document.getElementById('passkey-btn').disabled = true;
+        showSuccess('Passkey registered! You can add more from account settings.');
+        document.getElementById('passkey-btn').innerHTML = '<i data-lucide=\"circle-check\"></i> Add Another Passkey';
         lucide.createIcons();
       } catch(e) { showError('Passkey registration failed: ' + e.message); }
     }
@@ -1052,6 +1054,368 @@ fn register_form_page(ctx: Context) -> Response {
     function showError(msg) { const el = document.getElementById('error-msg'); el.textContent = msg; el.style.display = 'block'; }
     function showSuccess(msg) { const el = document.getElementById('success-msg'); el.textContent = msg; el.style.display = 'block'; }
     function hideMessages() { document.getElementById('error-msg').style.display = 'none'; document.getElementById('success-msg').style.display = 'none'; }
+  </script>
+  " <> lucide_script <> "
+</body>
+</html>",
+  )
+}
+
+/// Account settings: change password and manage passkeys. Session comes from
+/// `localStorage.pds_session` (same as login/register).
+pub fn account_page(_req: Request, _ctx: Context) -> Response {
+  html_response(
+    "<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Account - Gleam PDS</title>
+  " <> font_links <> "
+  <style>
+" <> brand_css <> "
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: var(--bg); font-family: var(--font-sans); color: var(--text);
+      padding: 1.5rem 1rem;
+    }
+    .waves {
+      position: fixed; left: 0; width: 100%; bottom: -10vh; height: 50vh;
+      overflow: hidden; z-index: 0; pointer-events: none;
+    }
+    .waves svg { display: block; width: 100%; height: calc((clamp(280px, 42vw, 460px) + 80px) * 2); }
+    .waves .wave-back { fill: var(--wave-back); }
+    .waves .wave-front { fill: var(--wave-front); }
+    .panel {
+      position: relative; z-index: 1; width: 100%; max-width: 28rem;
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: 20px; padding: 1.75rem 1.5rem 1.5rem;
+    }
+    h1 {
+      margin: 0 0 0.35rem; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    h1 svg, h1 i { width: 22px; height: 22px; color: var(--accent); }
+    .sub { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1.25rem; }
+    .identity {
+      font-family: var(--font-mono); font-size: 0.8rem; color: var(--link);
+      word-break: break-all; margin-bottom: 1.5rem;
+    }
+    h2 {
+      margin: 0 0 0.75rem; font-size: 0.95rem; font-weight: 600;
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    h2 svg, h2 i { width: 16px; height: 16px; color: var(--accent); }
+    .section { margin-bottom: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+    .section:first-of-type { border-top: none; padding-top: 0; }
+    .field { position: relative; margin-bottom: 1rem; }
+    .field .field-label {
+      position: absolute; left: 2.5rem; top: -0.45rem; z-index: 2; margin: 0;
+      padding: 0 0.4rem; font-size: 0.75rem; line-height: 1;
+      color: var(--text-muted); background: var(--bg-elevated);
+      opacity: 0; transform: translateY(3px);
+      transition: color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+    }
+    .field:focus-within .field-label { color: var(--accent-text); opacity: 1; transform: none; }
+    .field .field-icon {
+      position: absolute; left: 0.9rem; top: 29px; transform: translateY(-50%);
+      display: flex; color: var(--text-faint); pointer-events: none;
+    }
+    .field .field-icon svg { width: 20px; height: 20px; }
+    input.field-input {
+      width: 100%; box-sizing: border-box; min-height: 58px; padding: 0 1rem 0 2.75rem;
+      font-size: 1rem; border-radius: 16px; border: 1px solid var(--border);
+      background: var(--bg-sunken); color: var(--text); font-family: inherit;
+    }
+    input.field-input:focus { outline: none; border-color: var(--accent-text); box-shadow: 0 0 0 3px var(--accent-soft-bg); }
+    .error { color: var(--error); font-size: 0.875rem; margin: 0.5rem 0; display: none; }
+    .success { color: var(--success); font-size: 0.875rem; margin: 0.5rem 0; display: none; }
+    .passkey-list { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.65rem; }
+    .passkey-list li {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-radius: 12px;
+      background: var(--bg-sunken);
+    }
+    .passkey-meta { min-width: 0; }
+    .passkey-meta strong { display: block; font-size: 0.9rem; font-weight: 500; }
+    .passkey-meta span { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
+    .passkey-empty { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 1rem; }
+    .btn-danger {
+      background: transparent; border: 1px solid var(--border); color: var(--error);
+      border-radius: 10px; padding: 0.4rem 0.7rem; font-size: 0.8rem; cursor: pointer; font-family: inherit;
+    }
+    .btn-danger:hover { border-color: var(--error); }
+    .name-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .name-row input {
+      flex: 1; min-height: 42px; padding: 0 0.85rem; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text); font-family: inherit;
+    }
+    .links { text-align: center; margin-top: 0.5rem; font-size: 0.85rem; }
+    .links a { color: var(--accent-text); }
+    .signed-out { text-align: center; }
+    .signed-out p { color: var(--text-muted); margin: 0 0 1.25rem; }
+" <> button_css <> "
+  </style>
+</head>
+<body>
+  <div class='waves' aria-hidden='true'>
+  <svg viewBox='0 0 1440 640' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'>
+    <path class='wave-back' d='M0,110 C180,60 300,140 480,100 C660,60 780,25 960,80 C1140,135 1260,155 1440,90 L1440,640 L0,640 Z'/>
+    <path class='wave-front' d='M0,150 C220,100 340,170 540,130 C740,95 860,55 1080,115 C1240,155 1340,140 1440,150 L1440,640 L0,640 Z'/>
+  </svg>
+  </div>
+  <div class='panel' id='panel'>
+    <div id='signed-out' class='signed-out' style='display:none'>
+      <h1><i data-lucide='user-round'></i> Account</h1>
+      <p>Sign in with your main password to manage passkeys and change your password.</p>
+      <a class='btn btn-primary btn-full' href='/login'>Sign in</a>
+      <div class='links'><a href='/'>Home</a></div>
+    </div>
+    <div id='signed-in' style='display:none'>
+      <h1><i data-lucide='user-round'></i> Account</h1>
+      <p class='sub' id='handle-line'></p>
+      <div class='identity' id='did-line'></div>
+
+      <section class='section'>
+        <h2><i data-lucide='key-round'></i> Change password</h2>
+        <form id='password-form' onsubmit='changePassword(event)'>
+          <div class='field'>
+            <label class='field-label' for='current-password'>Current password</label>
+            <span class='field-icon'><i data-lucide='lock'></i></span>
+            <input class='field-input' type='password' id='current-password' autocomplete='current-password' required>
+          </div>
+          <div class='field'>
+            <label class='field-label' for='new-password'>New password</label>
+            <span class='field-icon'><i data-lucide='lock-keyhole'></i></span>
+            <input class='field-input' type='password' id='new-password' autocomplete='new-password' minlength='8' required>
+          </div>
+          <div class='field'>
+            <label class='field-label' for='confirm-password'>Confirm new password</label>
+            <span class='field-icon'><i data-lucide='lock-keyhole'></i></span>
+            <input class='field-input' type='password' id='confirm-password' autocomplete='new-password' minlength='8' required>
+          </div>
+          <div class='error' id='pw-error'></div>
+          <div class='success' id='pw-success'></div>
+          <button type='submit' class='btn btn-primary btn-full'>Update password</button>
+        </form>
+      </section>
+
+      <section class='section'>
+        <h2><i data-lucide='fingerprint'></i> Passkeys</h2>
+        <p class='passkey-empty' id='passkey-empty' style='display:none'>No passkeys yet. Add one for passwordless sign-in.</p>
+        <ul class='passkey-list' id='passkey-list'></ul>
+        <div class='name-row'>
+          <input type='text' id='passkey-name' placeholder='Label (optional)' maxlength='64' autocomplete='off'>
+        </div>
+        <div class='error' id='pk-error'></div>
+        <div class='success' id='pk-success'></div>
+        <button type='button' class='btn btn-soft btn-full' id='add-passkey-btn' onclick='registerPasskey()'>
+          <i data-lucide='plus'></i> Add passkey
+        </button>
+      </section>
+
+      <div class='links'>
+        <a href='#' onclick='signOut(); return false;'>Sign out</a> &middot;
+        <a href='/'>Home</a>
+      </div>
+    </div>
+  </div>
+  <script>
+    const BASE = window.location.origin;
+    let session = null;
+
+    function loadSession() {
+      try { return JSON.parse(localStorage.getItem('pds_session') || 'null'); }
+      catch (_) { return null; }
+    }
+
+    function authHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.accessJwt
+      };
+    }
+
+    function shortCred(id) {
+      if (!id || id.length < 16) return id || '';
+      return id.slice(0, 8) + '…' + id.slice(-6);
+    }
+
+    async function init() {
+      session = loadSession();
+      if (!session || !session.accessJwt) {
+        document.getElementById('signed-out').style.display = 'block';
+        lucide.createIcons();
+        return;
+      }
+      document.getElementById('signed-in').style.display = 'block';
+      document.getElementById('handle-line').textContent = session.handle || 'Signed in';
+      document.getElementById('did-line').textContent = session.did || '';
+      lucide.createIcons();
+      await refreshPasskeys();
+    }
+
+    async function refreshPasskeys() {
+      const listEl = document.getElementById('passkey-list');
+      const emptyEl = document.getElementById('passkey-empty');
+      listEl.innerHTML = '';
+      try {
+        const resp = await fetch(BASE + '/api/passkey/list', { headers: authHeaders() });
+        const data = await resp.json();
+        if (data.error) {
+          if (resp.status === 401 || resp.status === 403) {
+            signOut(true);
+            return;
+          }
+          showMsg('pk-error', data.message || data.error);
+          return;
+        }
+        const passkeys = data.passkeys || [];
+        emptyEl.style.display = passkeys.length ? 'none' : 'block';
+        passkeys.forEach(pk => {
+          const li = document.createElement('li');
+          const meta = document.createElement('div');
+          meta.className = 'passkey-meta';
+          const title = document.createElement('strong');
+          title.textContent = pk.name || 'Passkey';
+          const sub = document.createElement('span');
+          sub.textContent = (pk.createdAt ? pk.createdAt + ' · ' : '') + shortCred(pk.credentialId);
+          meta.appendChild(title);
+          meta.appendChild(sub);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-danger';
+          btn.textContent = 'Remove';
+          btn.onclick = () => deletePasskey(pk);
+          li.appendChild(meta);
+          li.appendChild(btn);
+          listEl.appendChild(li);
+        });
+      } catch (e) {
+        showMsg('pk-error', 'Could not load passkeys: ' + e.message);
+      }
+    }
+
+    async function changePassword(e) {
+      e.preventDefault();
+      hideMsg('pw-error'); hideMsg('pw-success');
+      const currentPassword = document.getElementById('current-password').value;
+      const newPassword = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+      if (newPassword !== confirmPassword) {
+        showMsg('pw-error', 'New passwords do not match');
+        return;
+      }
+      try {
+        const resp = await fetch(BASE + '/api/account/password', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.error) {
+          showMsg('pw-error', data.message || data.error || 'Password update failed');
+          return;
+        }
+        document.getElementById('password-form').reset();
+        showMsg('pw-success', 'Password updated. Other sessions were signed out.');
+      } catch (err) {
+        showMsg('pw-error', 'Password update failed: ' + err.message);
+      }
+    }
+
+    async function registerPasskey() {
+      hideMsg('pk-error'); hideMsg('pk-success');
+      const name = document.getElementById('passkey-name').value.trim();
+      try {
+        const beginResp = await fetch(BASE + '/api/passkey/register/begin', {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        const options = await beginResp.json();
+        if (options.error) { showMsg('pk-error', options.message || options.error); return; }
+
+        const credential = await navigator.credentials.create({
+          publicKey: {
+            challenge: base64urlToBuffer(options.challenge),
+            rp: options.rp,
+            user: { ...options.user, id: base64urlToBuffer(options.user.id) },
+            pubKeyCredParams: options.pubKeyCredParams,
+            timeout: options.timeout,
+            excludeCredentials: (options.excludeCredentials || []).map(c => ({...c, id: base64urlToBuffer(c.id)})),
+            authenticatorSelection: options.authenticatorSelection,
+            attestation: options.attestation
+          }
+        });
+
+        const finishResp = await fetch(BASE + '/api/passkey/register/finish', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            name: name || undefined,
+            response: {
+              attestationObject: bufferToBase64url(credential.response.attestationObject),
+              clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
+            },
+            type: credential.type
+          })
+        });
+        const result = await finishResp.json();
+        if (result.error) { showMsg('pk-error', result.message || result.error); return; }
+        document.getElementById('passkey-name').value = '';
+        showMsg('pk-success', 'Passkey added.');
+        await refreshPasskeys();
+      } catch (e) {
+        showMsg('pk-error', 'Passkey registration failed: ' + e.message);
+      }
+    }
+
+    async function deletePasskey(pk) {
+      hideMsg('pk-error'); hideMsg('pk-success');
+      if (!confirm('Remove this passkey?')) return;
+      try {
+        const resp = await fetch(BASE + '/api/passkey/delete', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ id: pk.id, credentialId: pk.credentialId })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.error) {
+          showMsg('pk-error', data.message || data.error || 'Could not remove passkey');
+          return;
+        }
+        showMsg('pk-success', 'Passkey removed.');
+        await refreshPasskeys();
+      } catch (e) {
+        showMsg('pk-error', 'Could not remove passkey: ' + e.message);
+      }
+    }
+
+    function signOut(soft) {
+      localStorage.removeItem('pds_session');
+      if (soft) {
+        document.getElementById('signed-in').style.display = 'none';
+        document.getElementById('signed-out').style.display = 'block';
+        lucide.createIcons();
+        return;
+      }
+      window.location.href = '/login';
+    }
+
+    function base64urlToBuffer(b64) {
+      const padding = '='.repeat((4 - b64.length % 4) % 4);
+      const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+      return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+    }
+    function bufferToBase64url(buffer) {
+      return btoa(String.fromCharCode(...new Uint8Array(buffer))).split('+').join('-').split('/').join('_').split('=').join('');
+    }
+    function showMsg(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.style.display = 'block'; }
+    function hideMsg(id) { document.getElementById(id).style.display = 'none'; }
+
+    init();
   </script>
   " <> lucide_script <> "
 </body>
