@@ -550,7 +550,8 @@ fn complete_login(
 ) -> Response {
   case request_id {
     Some(rid) if rid != "" -> {
-      // OAuth flow: generate code and redirect
+      // OAuth flow: generate code; return redirect URL for fetch-based passkey
+      // login (the authorize page navigates client-side).
       let code = crypto.random_string(32)
       let _ =
         sqlight.query(
@@ -597,9 +598,10 @@ fn complete_login(
           )
         }
         _ ->
-          response.json_response(
-            200,
-            json.object([#("code", json.string(code))]),
+          response.xrpc_error(
+            400,
+            "invalid_request",
+            "OAuth authorization request not found",
           )
       }
     }
