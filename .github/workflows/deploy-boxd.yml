@@ -1,0 +1,47 @@
+name: Deploy to pds.boxd.sh
+
+# Deploy-on-push is handled by boxd's webhook listener on the pds VM
+# (https://hooks.pds.boxd.sh/hooks/deploy) — not by this runner.
+# GitHub-hosted runners cannot reach the boxd gRPC API (:9443), so
+# `boxd machine exec` from Actions is not viable.
+#
+# This workflow only verifies the deploy hook is reachable after a push
+# to main. The actual sync/restart runs on-VM via /opt/boxd-platform
+# (git fetch + scripts/deploy-boxd.sh).
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pds-boxd
+  cancel-in-progress: false
+
+jobs:
+  verify-hook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check hooks.pds.boxd.sh is up
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 15 \
+            https://hooks.pds.boxd.sh/hooks/deploy)
+          echo "hooks.pds.boxd.sh/hooks/deploy → HTTP ${code}"
+          # webhook(8) returns 200/405/4xx for bare GET; connection proves DNS+proxy.
+          case "$code" in
+            200|404|405|401|403) echo "Deploy hook endpoint reachable." ;;
+            *)
+              echo "::error::Unexpected status ${code} from deploy hook"
+              exit 1
+              ;;
+          esac
+          # 404 usually means the hooks proxy is still pointed at the app
+          # (boxd-setup-deploy not run yet). Warn but don't fail the build —
+          # the push webhook registration is a one-time on-VM step.
+          if [ "$code" = "404" ]; then
+            echo "::warning::Deploy hook returned 404. Run boxd-setup-deploy on the pds golden (see README) so pushes to main redeploy."
+          fi
+          echo "Push-to-main deploy is performed on-VM (see /var/log/golden-deploy.log)."

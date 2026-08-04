@@ -18,7 +18,8 @@ An [AT Protocol](https://atproto.com) Personal Data Server, written in
 
 It is a real, federating PDS: accounts created on it are ingested by the
 official `bsky.network` relay and indexed by the Bluesky appview. A running
-instance serves [pds.readifur.gay](https://pds.readifur.gay).
+instance serves [pds.boxd.sh](https://pds.boxd.sh) (also mirrored historically
+at [pds.readifur.gay](https://pds.readifur.gay)).
 
 Everything lives in one OTP application and one SQLite file: no Postgres, no
 Redis, no sidecars. It is small enough to read end to end.
@@ -140,6 +141,28 @@ TLS certificate (DNS-01, via a `_acme-challenge` CNAME). Each handle is then
 served from `alice.example.com/.well-known/atproto-did`.
 
 ### Deploying
+
+**Production for this fork is [pds.boxd.sh](https://pds.boxd.sh)** (boxd golden VM).
+Merges to `main` redeploy via boxd's on-VM webhook listener — not a GitHub
+Actions runner (runners cannot reach the boxd gRPC API).
+
+```sh
+# one-time on a laptop with boxd auth (registers the push webhook):
+bash scripts/boxd-enable-deploy.sh
+
+# after that, every push/merge to main:
+#   hooks.pds.boxd.sh/hooks/deploy → git sync → scripts/deploy-boxd.sh
+boxd machine exec pds -- sudo tail -f /var/log/golden-deploy.log
+```
+
+[`.github/workflows/deploy-boxd.yml`](.github/workflows/deploy-boxd.yml) runs on
+`main` and only checks that the deploy hook endpoint is reachable.
+
+On the VM, `scripts/deploy-boxd.sh` runs `gleam deps download` (unless
+`--skip-deps`), `gleam build`, then restarts the `gleam-pds` systemd unit
+(or pm2 / compose if that is how the golden was set up).
+
+#### Fly.io (optional / alternate host)
 
 The included `Dockerfile` produces a ~67 MB image, and `fly.example.toml`
 deploys it to Fly.io with a persistent volume at `/data`. Copy it to `fly.toml`
