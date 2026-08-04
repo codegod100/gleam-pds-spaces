@@ -447,7 +447,7 @@ pub fn oauth_authorize_page(
 
     <div class='divider'>or</div>
 
-    <form method='POST' action='/oauth/authorize'>
+    <form id='oauth-form' onsubmit='loginPassword(event)'>
       <input type='hidden' name='request_id' value='" <> rid_attr <> "'>
       <div class='field'>
         <label class='field-label' for='identifier'>Handle or email</label>
@@ -468,12 +468,24 @@ pub fn oauth_authorize_page(
     </form>
   </div>
   <script>
+    function finishOAuth(data){
+      if(data.error){alert(data.message||data.error);return;}
+      if(data.code){alert('Authorization code: '+data.code);return;}
+    }
+    async function loginPassword(e){
+      e.preventDefault();
+      try{
+        var fd=new FormData(document.getElementById('oauth-form'));
+        var r=await fetch('/oauth/authorize',{method:'POST',body:fd});
+        finishOAuth(await r.json());
+      }catch(e){alert('Login error: '+e.message)}
+    }
     async function loginPasskey(){try{
       var r=await fetch('/api/passkey/login/begin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:'" <> rid_attr <> "'})});
       var d=await r.json();var ch=b64d(d.challenge);var ac=(d.allowCredentials||[]).map(function(c){return{type:c.type,id:b64d(c.id)}});
       var cred=await navigator.credentials.get({publicKey:{challenge:ch,allowCredentials:ac,rpId:d.rpId,timeout:60000,userVerification:'preferred'}});
       var fr=await fetch('/api/passkey/login/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:'" <> rid_attr <> "',id:cred.id,rawId:b64e(cred.rawId),response:{authenticatorData:b64e(cred.response.authenticatorData),clientDataJSON:b64e(cred.response.clientDataJSON),signature:b64e(cred.response.signature)},type:cred.type})});
-      var fd=await fr.json();if(fd.redirect)window.location.href=fd.redirect;
+      finishOAuth(await fr.json());
     }catch(e){alert('Passkey error: '+e.message)}}
     function b64d(b){var p='='.repeat((4-b.length%4)%4);var s=(b+p).split('-').join('+').split('_').join('/');return Uint8Array.from(atob(s),function(c){return c.charCodeAt(0)}).buffer}
     function b64e(buf){var s='';var u=new Uint8Array(buf);for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s).split('+').join('-').split('/').join('_').split('=').join('')}

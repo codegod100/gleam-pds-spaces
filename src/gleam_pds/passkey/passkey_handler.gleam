@@ -2,6 +2,7 @@
 
 import gleam_pds/context.{type Context}
 import gleam_pds/crypto
+import gleam_pds/oauth/oauth_handler
 import gleam_pds/ratelimit
 import gleam_pds/web/response
 import gleam_pds/xrpc/server
@@ -549,60 +550,8 @@ fn complete_login(
   ctx: Context,
 ) -> Response {
   case request_id {
-    Some(rid) if rid != "" -> {
-      // OAuth flow: generate code and redirect
-      let code = crypto.random_string(32)
-      let _ =
-        sqlight.query(
-          "UPDATE oauth_auth_requests SET did = ?, code = ? WHERE id = ?",
-          ctx.db,
-          [
-            sqlight.text(user_did),
-            sqlight.text(code),
-            sqlight.text(rid),
-          ],
-          decode.at([0], decode.string),
-        )
-
-      let auth_req =
-        sqlight.query(
-          "SELECT redirect_uri, state FROM oauth_auth_requests WHERE id = ? LIMIT 1",
-          ctx.db,
-          [sqlight.text(rid)],
-          {
-            use r <- decode.field(0, decode.string)
-            use s <- decode.field(1, decode.string)
-            decode.success(#(r, s))
-          },
-        )
-
-      case auth_req {
-        Ok([#(redirect_uri, state)]) -> {
-          let sep = case string.contains(redirect_uri, "?") {
-            True -> "&"
-            False -> "?"
-          }
-          let redirect =
-            redirect_uri
-            <> sep
-            <> "code="
-            <> code
-            <> "&state="
-            <> state
-            <> "&iss="
-            <> ctx.config.public_url
-          response.json_response(
-            200,
-            json.object([#("redirect", json.string(redirect))]),
-          )
-        }
-        _ ->
-          response.json_response(
-            200,
-            json.object([#("code", json.string(code))]),
-          )
-      }
-    }
+    Some(rid) if rid != "" ->
+      oauth_handler.complete_authorization(rid, user_did, ctx)
     _ -> {
       // Direct login. Route through the shared session creator so the session
       // is persisted (and therefore revocable, C4) rather than being a
